@@ -1,0 +1,6 @@
+streamlit
+yfinance
+pandas
+plotly
+streamlit-autorefresh
+psycopg2-binary
