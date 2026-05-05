@@ -416,16 +416,6 @@ def main():
         st.session_state["bt_equity"]  = best_eq
         st.session_state["bt_results"] = df_res
 
-    today_str = datetime.now(JST).strftime("%Y-%m-%d")
-    if st.session_state.get("bt_apply_date") != today_str:
-        best_p = st.session_state["bt_best"]
-        ai_rec = {2: "積極", 3: "普通"}.get(best_p["score_buy"], "慎重")
-        db.save_settings(initial_cash, settings["fee_rate"],
-                         best_p["sl_pct"], best_p["tp_pct"], ai_rec)
-        settings = db.get_settings()
-        st.session_state["bt_apply_date"] = today_str
-        st.toast(f"✅ AI設定を自動更新（損切り{best_p['sl_pct']}% / 利確{best_p['tp_pct']}% / {ai_rec}）")
-
     # ── 自動リフレッシュのたびに価格キャッシュをクリア ─────────
     last_ref_cnt = st.session_state.get("last_ref_cnt", -1)
     if refresh_count > last_ref_cnt:
@@ -484,7 +474,7 @@ def main():
 
         if st.button("💾 設定を保存", use_container_width=True):
             db.save_settings(new_cash, fee_opt[fee_label], sl_pct, tp_pct, ai_level)
-            fetch_price_info.clear()
+            _batch_prices.clear()
             st.success("保存しました")
             st.rerun()
 
