@@ -9,7 +9,6 @@ from streamlit_autorefresh import st_autorefresh
 
 from database import Database
 import ai_engine as ai
-import backtest as bt
 import reflector as ref
 
 st.set_page_config(
@@ -81,12 +80,6 @@ PERIOD_MAP   = {
 DEFAULT_WL   = ["7203.T", "6758.T", "7974.T", "9984.T", "6861.T"]
 
 db = Database()
-
-
-@st.cache_data(ttl=86400, show_spinner=False)
-def _auto_optimize(initial_cash):
-    """1日1回だけ実行される最適化（結果は24時間キャッシュ）"""
-    return bt.optimize(initial_cash=initial_cash, period="1y")
 
 
 # ── ユーティリティ ──────────────────────────────────────────
@@ -408,14 +401,6 @@ def main():
                 scan_universe.clear()
                 st.toast("🧠 本日の取引を反省・学習しました")
 
-    # ── バックテスト自動最適化（起動時1回 + 1日1回自動適用） ──
-    if "bt_best" not in st.session_state:
-        with st.spinner("🔬 AIパラメータを最適化中...（初回のみ約20秒）"):
-            best_p, best_eq, df_res = _auto_optimize(int(initial_cash))
-        st.session_state["bt_best"]    = best_p
-        st.session_state["bt_equity"]  = best_eq
-        st.session_state["bt_results"] = df_res
-
     # ── 自動リフレッシュのたびに価格キャッシュをクリア ─────────
     last_ref_cnt = st.session_state.get("last_ref_cnt", -1)
     if refresh_count > last_ref_cnt:
@@ -660,8 +645,8 @@ def main():
 
         # ── タブ ────────────────────────────────────────────
         st.divider()
-        t_port, t_hist, t_stat, t_trend, t_bt, t_learn = st.tabs(
-            ["💼 ポートフォリオ", "📜 取引履歴", "📊 統計", "📈 資産推移", "🔬 バックテスト", "🧠 学習ログ"]
+        t_port, t_hist, t_stat, t_trend, t_learn = st.tabs(
+            ["💼 ポートフォリオ", "📜 取引履歴", "📊 統計", "📈 資産推移", "🧠 学習ログ"]
         )
 
         with t_port:
@@ -722,71 +707,6 @@ def main():
                 if fig_trend:
                     st.plotly_chart(fig_trend, use_container_width=True,
                                     config={"displayModeBar": False}, key="trend")
-
-        with t_bt:
-            st.markdown("#### 🔬 AIパラメータ自動最適化")
-            st.caption("起動時に自動実行・毎日1回設定を自動反映します。")
-
-            best_p  = st.session_state["bt_best"]
-            best_eq = st.session_state["bt_equity"]
-            df_res  = st.session_state["bt_results"]
-            top     = df_res.iloc[0]
-            ai_rec  = {2: "積極", 3: "普通"}.get(best_p["score_buy"], "慎重")
-
-            # 結果サマリー
-            r1, r2, r3 = st.columns(3)
-            r1.metric("最良リターン",     f"{top['リターン%']:+.2f}%")
-            r2.metric("最大ドローダウン", f"{top['最大ドローダウン%']:.1f}%")
-            r3.metric("最終資産",         f"¥{top['最終資産']:,}")
-
-            st.divider()
-            ba, bb = st.columns(2)
-
-            with ba:
-                st.markdown("**📋 適用中パラメータ**")
-                for k, v in {
-                    "RSI 買いライン":  best_p["rsi_buy"],
-                    "RSI 売りライン":  best_p["rsi_sell"],
-                    "損切り %":        best_p["sl_pct"],
-                    "利確 %":          best_p["tp_pct"],
-                    "1回の投資比率":   f"{int(best_p['ratio']*100)}%",
-                    "AI積極度":        ai_rec,
-                }.items():
-                    st.markdown(
-                        f"<span style='color:#94a3b8;font-size:0.85em'>{k}</span>　"
-                        f"<span style='font-weight:bold'>{v}</span>",
-                        unsafe_allow_html=True,
-                    )
-                st.markdown("")
-                if st.button("🔄 今すぐ再最適化", use_container_width=True):
-                    _auto_optimize.clear()
-                    st.session_state.pop("bt_best", None)
-                    st.session_state.pop("bt_apply_date", None)
-                    st.rerun()
-
-            with bb:
-                st.markdown("**📈 バックテスト資産推移**")
-                fig_bt = go.Figure()
-                fig_bt.add_trace(go.Scatter(
-                    x=best_eq.index, y=best_eq["value"],
-                    line=dict(color="#00d4ff", width=2),
-                    fill="tozeroy", fillcolor="rgba(0,212,255,0.05)",
-                    showlegend=False,
-                ))
-                fig_bt.add_hline(y=initial_cash, line_dash="dash", line_color="#4a5568",
-                                 annotation_text=f"初期 ¥{initial_cash:,.0f}",
-                                 annotation_font_color="#94a3b8")
-                fig_bt.update_layout(
-                    height=260, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#0f1521",
-                    margin=dict(l=10, r=10, t=10, b=10),
-                    yaxis=dict(tickformat=",.0f", gridcolor="#1e293b"),
-                    xaxis=dict(gridcolor="#1e293b"),
-                )
-                st.plotly_chart(fig_bt, use_container_width=True,
-                                config={"displayModeBar": False}, key="bt_chart")
-
-            with st.expander("全結果を見る（上位30件）"):
-                st.dataframe(df_res.head(30), use_container_width=True, hide_index=True)
 
         with t_learn:
             st.markdown("#### 🧠 AI自己学習ログ")
