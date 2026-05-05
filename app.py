@@ -100,6 +100,35 @@ def fetch_history(ticker, period="3mo", interval="1d"):
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def _batch_sparklines(tickers_tuple):
+    """ウォッチリスト全銘柄の1ヶ月足を一括取得（30分キャッシュ）"""
+    tickers = list(tickers_tuple)
+    try:
+        raw = yf.download(tickers, period="1mo", interval="1d",
+                          auto_adjust=True, progress=False)
+        if raw.empty:
+            return {}
+        result = {}
+        for t in tickers:
+            try:
+                if isinstance(raw.columns, pd.MultiIndex):
+                    hist = pd.DataFrame({
+                        col: raw[col][t]
+                        for col in ["Open", "High", "Low", "Close"]
+                        if col in raw.columns.get_level_values(0)
+                    }).dropna()
+                else:
+                    hist = raw[["Open", "High", "Low", "Close"]].dropna()
+                if not hist.empty:
+                    result[t] = hist
+            except Exception:
+                pass
+        return result
+    except Exception:
+        return {}
+
+
 @st.cache_data(ttl=290)
 def _batch_prices(tickers_tuple):
     """複数銘柄の株価を一括取得（個別APIコールを1回にまとめる）"""
@@ -125,7 +154,7 @@ def _batch_prices(tickers_tuple):
         return {}
 
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=1800)
 def scan_universe(rsi_w=1.0, macd_w=1.0, ma_w=1.0, gc_w=1.0):
     """全銘柄を一括ダウンロードしてスキャン（1回のAPIリクエストで完了）"""
     weights = {"rsi": rsi_w, "macd": macd_w, "ma": ma_w, "gc": gc_w}
@@ -162,10 +191,11 @@ def scan_universe(rsi_w=1.0, macd_w=1.0, ma_w=1.0, gc_w=1.0):
 
 # ── チャート ────────────────────────────────────────────────
 
-def make_sparkline(ticker):
-    """ウォッチリスト用ミニローソク足チャート（クリック検出用不可視Scatterつき）"""
-    h = fetch_history(ticker, "1mo")
-    if h.empty:
+def make_sparkline(ticker, h=None):
+    """ウォッチリスト用ミニローソク足チャート"""
+    if h is None:
+        h = fetch_history(ticker, "1mo")
+    if h is None or h.empty:
         return None
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
@@ -289,7 +319,8 @@ def make_trend_chart(history_rows, initial_cash):
                   annotation_font_color="#94a3b8")
     try:
         start = df["date"].iloc[0].strftime("%Y-%m-%d")
-        nk = yf.Ticker("^N225").history(start=start, interval="1d")
+        nk = fetch_history("^N225", "1y")
+        nk = nk[nk.index >= pd.Timestamp(start, tz=nk.index.tz)]
         if not nk.empty:
             nk_norm = nk["Close"] / nk["Close"].iloc[0] * initial_cash
             fig.add_trace(go.Scatter(
@@ -406,7 +437,7 @@ def main():
     if refresh_count > last_ref_cnt:
         st.session_state["last_ref_cnt"] = refresh_count
         _batch_prices.clear()
-        fetch_history.clear()
+        fetch_history.clear()   # メインチャートのみ（スパークラインは30分キャッシュを維持）
 
     # ── AI自動取引（取引時間中・リフレッシュ時のみ） ─────────
     if market_open:
@@ -574,6 +605,7 @@ def main():
                     st.rerun()
 
         wl_items = list(st.session_state["watchlist"])
+        spark_data = _batch_sparklines(tuple(sorted(wl_items)))
         for i in range(0, len(wl_items), 2):
             card_cols = st.columns(2)
             for j in range(2):
@@ -608,7 +640,7 @@ def main():
                             )
 
                         # ローソク足（表示のみ）
-                        spark = make_sparkline(t)
+                        spark = make_sparkline(t, spark_data.get(t))
                         if spark:
                             st.plotly_chart(
                                 spark, use_container_width=True,
