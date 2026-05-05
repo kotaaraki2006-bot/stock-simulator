@@ -563,7 +563,7 @@ def main():
     k2.metric("💵 現金残高",  f"¥{cash:,.0f}")
     k3.metric("📊 株式評価額", f"¥{hval:,.0f}")
     unr_sign = "+" if unrealized >= 0 else ""
-    k4.metric("💹 含み利益",   f"¥{unrealized:,.0f}",
+    k4.metric("💹 含み損益",   f"¥{unrealized:,.0f}",
               f"{unr_sign}{unrealized / max(hval,1)*100:.1f}%" if hval > 0 else None)
     k5.metric("📈 損益率",    f"{pl_pct:+.2f}%")
 
@@ -704,7 +704,7 @@ def main():
                             "株数":     h["shares"],
                             "取得単価": f"¥{h['avg_price']:,.0f}",
                             "現在値":   f"¥{cur:,.0f}",
-                            "含み利益": f"{icon} ¥{pl_h:+,.0f} ({pct_h:+.1f}%)",
+                            "含み損益": f"{icon} ¥{pl_h:+,.0f} ({pct_h:+.1f}%)",
                         })
                     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
